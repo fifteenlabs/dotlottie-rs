@@ -154,8 +154,14 @@ mod thorvg {
     fn get_cpp_standard_library() -> Vec<String> {
         let host_target =
             std::env::var("HOST").expect("HOST environment variable should be set by Cargo");
+        let target = std::env::var("TARGET").unwrap_or_default();
 
-        if is_apple_platform(&host_target) {
+        if target.contains("android") {
+            // The NDK's clang++ links libc++ itself, and the `cc` crate adds
+            // `c++_shared` for Android targets; naming the host's runtime here
+            // would point the Android linker at a library it doesn't have.
+            vec![]
+        } else if is_apple_platform(&host_target) {
             // macOS and iOS use libc++ as the C++ standard library
             vec![String::from("c++")]
         } else if is_unix_platform() {
@@ -551,11 +557,13 @@ namespace tvg
 
         // --- cc::Build setup ---
         let mut cc_build = cc::Build::new();
-        // Only override compiler when CXX is explicitly set or for non-MSVC targets.
-        // For MSVC targets, let cc crate auto-detect cl.exe.
+        // A plain `CXX` still wins; otherwise `cc` resolves the compiler
+        // itself, which is what makes cross builds (cargo-ndk sets
+        // `CXX_<target>`, not `CXX`) reach the target's toolchain.
+        // wasm32-unknown-unknown still needs clang++.
         if let Some(ref comp) = compiler {
             cc_build.compiler(comp);
-        } else if !is_windows_msvc {
+        } else if is_wasm_unknown {
             cc_build.compiler("clang++");
         }
 
